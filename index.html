@@ -12,8 +12,26 @@
 </head>
 <body>
 
-<div class="night-fallback" aria-hidden="true"></div>
+<div class="night-fallback" aria-hidden="true">
+  <svg class="sil" viewBox="0 0 560 240">
+    <g fill="#04101E" stroke="#E8C766" stroke-opacity=".9" stroke-width="2" stroke-linejoin="round">
+      <rect x="180" y="150" width="200" height="90"/>
+      <path d="M180 150 q100 -110 200 0 z"/>
+      <rect x="276" y="16" width="8" height="34"/>
+      <circle cx="280" cy="14" r="6"/>
+      <rect x="120" y="60" width="14" height="180"/>
+      <path d="M113 60 q14 -26 28 0 z"/>
+      <rect x="426" y="60" width="14" height="180"/>
+      <path d="M419 60 q14 -26 28 0 z"/>
+    </g>
+    <g fill="#E8C766">
+      <circle cx="250" cy="196" r="5"/><circle cx="280" cy="196" r="5"/><circle cx="310" cy="196" r="5"/>
+      <path d="M262 150 q18 -22 36 0 z" fill-opacity=".35"/>
+    </g>
+  </svg>
+</div>
 <canvas id="bg"></canvas>
+<div id="dbg">bg: init…</div>
 
 <header class="nav">
   <div class="container nav-in">

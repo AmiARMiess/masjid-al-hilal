@@ -1,5 +1,7 @@
-/* MASJID AN-NOOR — night-sky mosque scene + page interactions (classic script) */
+/* MASJID AL-HILAL — night sky: Three.js if available, built-in Canvas 2D otherwise */
 (function () {
+  function dbg(s) { var d = document.getElementById('dbg'); if (d) d.textContent = s; }
+
   /* ---------- nav + reveals ---------- */
   var nav = document.querySelector('.nav');
   addEventListener('scroll', function () { nav.classList.toggle('scrolled', scrollY > 8); }, { passive: true });
@@ -14,11 +16,142 @@
     document.querySelectorAll('.reveal').forEach(function (el) { el.classList.add('in'); });
   }
 
-  /* ---------- Three.js scene ---------- */
-  if (!window.THREE) { document.body.classList.add('no-three'); return; }
+  /* ---------- shared watchdog ---------- */
+  var lastTick = performance.now(), rearmed = false, startLoop = null;
+  function beat() { lastTick = performance.now(); rearmed = false; }
+  function rearm() { if (startLoop && !rearmed) { rearmed = true; startLoop(); } }
+  setInterval(function () {
+    if (document.visibilityState === 'visible' && performance.now() - lastTick > 1200) rearm();
+  }, 400);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') { lastTick = performance.now(); rearm(); }
+  });
+  addEventListener('focus', rearm);
 
-  try {
-    var renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('bg'), antialias: true, alpha: true });
+  var canvas = document.getElementById('bg');
+
+  if (window.THREE && canvas) {
+    document.body.classList.add('three');
+    try { initThree(); dbg('bg: 3D webgl'); }
+    catch (e) {
+      document.body.classList.remove('three');
+      dbg('bg: 2D (3D failed: ' + e.message + ')');
+      init2D();
+    }
+  } else {
+    dbg('bg: 2D canvas (no three.js)');
+    init2D();
+  }
+
+  /* ========== BUILT-IN 2D NIGHT ENGINE ========== */
+  function init2D() {
+    if (!canvas) { dbg('bg: css only (no canvas)'); return; }
+    var ctx = canvas.getContext && canvas.getContext('2d');
+    if (!ctx) { dbg('bg: css only (no 2d ctx)'); return; }
+    document.body.classList.add('twod');   /* hide CSS svg — canvas draws the mosque */
+    var DPR = Math.min(window.devicePixelRatio || 1, 2), W, H;
+    function rz() {
+      W = canvas.width = innerWidth * DPR;
+      H = canvas.height = innerHeight * DPR;
+      canvas.style.width = innerWidth + 'px';
+      canvas.style.height = innerHeight + 'px';
+    }
+    rz(); addEventListener('resize', rz);
+
+    var stars = [], motes = [], i;
+    for (i = 0; i < 220; i++) stars.push({
+      x: Math.random(), y: Math.random() * .8,
+      r: (Math.random() * 1.2 + .4) * DPR,
+      ph: Math.random() * 6.28, sp: .5 + Math.random() * 1.5, g: i % 7 === 0
+    });
+    for (i = 0; i < 60; i++) motes.push({
+      x: Math.random(), y: Math.random(), s: .02 + Math.random() * .05, w: Math.random() * 6.28
+    });
+
+    /* gold-outlined mosque, drawn with the same 2D context as the stars */
+    function mosque(t) {
+      var s = Math.min(W, H) / 700, cx = W / 2;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(232,199,102,.9)';
+      ctx.lineWidth = Math.max(1.5, 2 * s);
+      ctx.fillStyle = 'rgba(4,16,30,.85)';
+      ctx.shadowColor = 'rgba(232,199,102,.5)';
+      ctx.shadowBlur = 12 * DPR;
+      ctx.lineJoin = 'round';
+      /* hall */
+      ctx.beginPath(); ctx.rect(cx - 170 * s, H - 92 * s, 340 * s, 92 * s); ctx.fill(); ctx.stroke();
+      /* dome */
+      ctx.beginPath(); ctx.arc(cx, H - 92 * s, 100 * s, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+      /* finial */
+      ctx.beginPath();
+      ctx.moveTo(cx - 3 * s, H - 190 * s); ctx.lineTo(cx - 3 * s, H - 214 * s);
+      ctx.lineTo(cx + 3 * s, H - 214 * s); ctx.lineTo(cx + 3 * s, H - 190 * s);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx, H - 218 * s, 6 * s, 0, 7); ctx.fill(); ctx.stroke();
+      /* minarets */
+      [-210, 210].forEach(function (dx) {
+        ctx.beginPath(); ctx.rect(cx + (dx - 8) * s, H - 170 * s, 16 * s, 170 * s); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.arc(cx + dx * s, H - 170 * s, 16 * s, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+      });
+      ctx.shadowBlur = 0;
+      /* glowing windows + door arch */
+      [-34, 0, 34].forEach(function (dx, k) {
+        ctx.fillStyle = 'rgba(232,199,102,' + (0.6 + 0.4 * Math.abs(Math.sin(t * 1.6 + k))) + ')';
+        ctx.beginPath(); ctx.arc(cx + dx * s, H - 52 * s, 5 * s, 0, 7); ctx.fill();
+      });
+      ctx.fillStyle = 'rgba(232,199,102,.35)';
+      ctx.beginPath(); ctx.arc(cx, H - 2 * s, 26 * s, Math.PI, 0); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+
+    function frame(now) {
+      beat();
+      var t = now / 1000;
+      ctx.clearRect(0, 0, W, H);
+
+      mosque(t);
+
+      /* pulsing moon glow */
+      var gx = W * .8, gy = H * .16, gr = (95 + Math.sin(t * .8) * 9) * DPR;
+      var g = ctx.createRadialGradient(gx, gy, 0, gx, gy, gr);
+      g.addColorStop(0, 'rgba(232,199,102,.5)');
+      g.addColorStop(.5, 'rgba(232,199,102,.15)');
+      g.addColorStop(1, 'rgba(232,199,102,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(gx - gr, gy - gr, gr * 2, gr * 2);
+
+      /* twinkling stars */
+      for (var k = 0; k < stars.length; k++) {
+        var s = stars[k];
+        var a = .25 + .75 * Math.abs(Math.sin(t * s.sp + s.ph));
+        ctx.beginPath();
+        ctx.arc(s.x * W, s.y * H, s.r, 0, 7);
+        ctx.fillStyle = (s.g ? 'rgba(232,199,102,' : 'rgba(220,235,255,') + a + ')';
+        ctx.fill();
+      }
+
+      /* rising gold motes */
+      ctx.globalCompositeOperation = 'lighter';
+      for (k = 0; k < motes.length; k++) {
+        var m = motes[k];
+        m.y -= m.s * .016;
+        if (m.y < -.02) { m.y = 1.02; m.x = Math.random(); }
+        ctx.beginPath();
+        ctx.arc((m.x + Math.sin(t * .6 + m.w) * .012) * W, m.y * H, 1.1 * DPR, 0, 7);
+        ctx.fillStyle = 'rgba(232,199,102,.55)';
+        ctx.fill();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+
+      requestAnimationFrame(frame);
+    }
+    startLoop = function () { requestAnimationFrame(frame); };
+    startLoop();
+  }
+
+  /* ========== THREE.JS 3D NIGHT SCENE ========== */
+  function initThree() {
+    var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.setSize(innerWidth, innerHeight);
     renderer.setClearColor(0x071120, 1);
@@ -36,23 +169,17 @@
       );
     }
 
-    /* --- stylized low-poly mosque --- */
     var mosque = new THREE.Group();
-
     var dome = wire(new THREE.SphereGeometry(1.7, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), .9);
     dome.position.y = 1.2; mosque.add(dome);
-
     var finial = wire(new THREE.ConeGeometry(.16, .7, 6), .9);
     finial.position.y = 3.2; mosque.add(finial);
     var tip = wire(new THREE.SphereGeometry(.1, 6, 4), .9);
     tip.position.y = 3.7; mosque.add(tip);
-
     var base = wire(new THREE.BoxGeometry(4.4, 1.2, 2.8), .7);
     base.position.y = .6; mosque.add(base);
-
     var door = wire(new THREE.BoxGeometry(.8, 1, .1), .8);
     door.position.set(0, .5, 1.42); mosque.add(door);
-
     [-2.9, 2.9].forEach(function (sx) {
       var shaft = wire(new THREE.CylinderGeometry(.16, .22, 3.4, 8), .8);
       shaft.position.set(sx, 1.7, 0); mosque.add(shaft);
@@ -66,7 +193,6 @@
     mosque.position.y = -1.5;
     scene.add(mosque);
 
-    /* --- crescent moon sprite --- */
     var cv = document.createElement('canvas'); cv.width = cv.height = 256;
     var g2 = cv.getContext('2d');
     g2.shadowColor = 'rgba(232,199,102,.9)'; g2.shadowBlur = 42;
@@ -75,13 +201,10 @@
     g2.shadowBlur = 0;
     g2.globalCompositeOperation = 'destination-out';
     g2.beginPath(); g2.arc(162, 108, 76, 0, 7); g2.fill();
-    var moon = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false
-    }));
+    var moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false }));
     moon.scale.set(7, 7, 1); moon.position.set(4.4, 3.6, -8);
     scene.add(moon);
 
-    /* --- stars --- */
     var SN = 700, sp = new Float32Array(SN * 3);
     for (var i = 0; i < SN; i++) {
       var v = new THREE.Vector3(Math.random() * 2 - 1, Math.random() * .9 + .08, Math.random() * 2 - 1)
@@ -93,7 +216,6 @@
     var stars = new THREE.Points(sGeo, new THREE.PointsMaterial({ color: 0xDCEBFF, size: .07, transparent: true, opacity: .85, depthWrite: false }));
     scene.add(stars);
 
-    /* --- drifting gold motes --- */
     var MN = 130, mp = new Float32Array(MN * 3), mSpeed = [];
     for (i = 0; i < MN; i++) {
       mp[i*3] = (Math.random() - .5) * 12;
@@ -105,7 +227,6 @@
     mGeo.setAttribute('position', new THREE.BufferAttribute(mp, 3));
     scene.add(new THREE.Points(mGeo, new THREE.PointsMaterial({ color: GOLD, size: .05, transparent: true, opacity: .7, depthWrite: false, blending: THREE.AdditiveBlending })));
 
-    /* --- interaction --- */
     var mx = 0, my = 0, tx = 0, ty = 0, scr = 0;
     addEventListener('mousemove', function (e) {
       tx = (e.clientX / innerWidth - .5) * 2;
@@ -115,8 +236,8 @@
 
     var clock = new THREE.Clock();
     function frame() {
+      beat();
       var t = clock.getElapsedTime();
-      var dt = Math.min(clock.getDelta ? .016 : .016, .05);
       mx += (tx - mx) * .04; my += (ty - my) * .04;
 
       mosque.rotation.y = Math.sin(t * .12) * .22 + mx * .3 + scr * .0004;
@@ -137,31 +258,13 @@
       renderer.render(scene, camera);
       requestAnimationFrame(frame);
     }
-
-    /* self-healing loop */
-    var lastTick = performance.now(), rearmed = false;
-    function tick(now) {
-      lastTick = now; rearmed = false;
-      try { frame(); } catch (e) {}
-    }
-    /* frame() self-schedules; watchdog re-arms if Chrome stalls it */
-    setInterval(function () {
-      if (document.visibilityState === 'visible' && performance.now() - lastTick > 1200 && !rearmed) {
-        rearmed = true; requestAnimationFrame(frame);
-      }
-    }, 400);
-    document.addEventListener('visibilitychange', function () {
-      if (document.visibilityState === 'visible' && !rearmed) { rearmed = true; requestAnimationFrame(frame); }
-    });
-
-    requestAnimationFrame(frame);
+    startLoop = function () { requestAnimationFrame(frame); };
+    startLoop();
 
     addEventListener('resize', function () {
       camera.aspect = innerWidth / innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
     });
-  } catch (e) {
-    document.body.classList.add('no-three');
   }
 })();
